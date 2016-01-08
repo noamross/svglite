@@ -16,15 +16,21 @@
 //  You should have received a copy of the GNU General Public License
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+// [[Rcpp::depends(BH)]]
+
 #include <Rcpp.h>
 #include <gdtools.h>
+#include <iostream>
+#include <fstream>
+#include <boost/format.hpp>
 #include <string>
 #include <R_ext/GraphicsEngine.h>
 
 // SVG device metadata
 class SVGDesc {
 public:
-  FILE *file;
+  std::ofstream file;
   std::string filename;
   int pageno;
   double clipleft, clipright, cliptop, clipbottom;
@@ -32,20 +38,21 @@ public:
   XPtrCairoContext cc;
 
   SVGDesc(std::string filename_, bool standalone_):
-      filename(filename_),
-      pageno(0),
-      standalone(standalone_),
-      cc(gdtools::context_create()) {
-    file = fopen(R_ExpandFileName(filename.c_str()), "w");
+    filename(filename_),
+    pageno(0),
+    standalone(standalone_),
+    cc(gdtools::context_create()) {
+
+    file.open(R_ExpandFileName(filename.c_str()));
   }
 
   bool ok() const {
-    return file != NULL;
+    return file.is_open();
   }
 
   ~SVGDesc() {
     if (ok())
-      fclose(file);
+      file.close();
   }
 };
 
@@ -80,71 +87,73 @@ inline std::string fontname(const char* family_, int face) {
   }
 }
 
-inline void write_escaped(FILE* f, const char* text) {
+inline void write_escaped(std::ofstream& f, const char* text) {
   for(const char* cur = text; *cur != '\0'; ++cur) {
     switch(*cur) {
-    case '&': fputs("&amp;", f); break;
-    case '<': fputs("&lt;",  f); break;
-    case '>': fputs("&gt;",  f); break;
-    default:  fputc(*cur,    f);
+    case '&':
+      f << "&amp;";
+      break;
+    case '<': f << "&lt;"; break;
+    case '>': f << "&gt;"; break;
+    default:  f << *cur;
     }
   }
 }
 
-inline void write_attr_dbl(FILE* f, const char* attr, double value) {
-  fprintf(f, " %s='%.2f'", attr, value);
+inline void write_attr_dbl(std::ofstream& f, const char* attr, double value) {
+  f << boost::format(" %s='%.2f'") % attr % value;
 }
 
-inline void write_attr_str(FILE* f, const char* attr, const char* value) {
-  fprintf(f, " %s='%s'", attr, value);
+inline void write_attr_str(std::ofstream& f, const char* attr, const char* value) {
+  f << boost::format(" %s='%s'") % attr % value;
 }
 
 
 
 // Beginning of writing style attributes
-inline void write_style_begin(FILE* f) {
-  fputs(" style='", f);
+inline void write_style_begin(std::ofstream& f) {
+  f << " style='";
 }
 
 // End of writing style attributes
-inline void write_style_end(FILE* f) {
-  fputs("'", f);
+inline void write_style_end(std::ofstream& f) {
+  f << "'";
 }
 
 // Writing style attributes related to colors
-inline void write_style_col(FILE* f, const char* attr, int col, bool first = false) {
+inline void write_style_col(std::ofstream& f, const char* attr, int col, bool first = false) {
   int alpha = R_ALPHA(col);
 
-  fprintf(f, "%s", first ? "" : " ");
+  f << boost::format("%s") % (first ? "" : " ");
   if (col == NA_INTEGER || alpha == 0) {
-    fprintf(f, "%s: none;", attr);
+    f << boost::format("%s: none;") % attr;
     return;
   } else {
-    fprintf(f, "%s: #%02X%02X%02X;", attr, R_RED(col), R_GREEN(col), R_BLUE(col));
+    f << boost::format("%s: #%02X%02X%02X;") % attr %R_RED(col) %R_GREEN(col) %R_BLUE(col);
     if (alpha != 255)
-      fprintf(f, " %s-opacity: %0.2f;", attr, alpha / 255.0);
+      f << boost::format(" %s-opacity: %0.2f;") % attr % (alpha / 255.0);
   }
 }
 
 // Writing style attributes whose values are double type
-inline void write_style_dbl(FILE* f, const char* attr, double value, bool first = false) {
-  fprintf(f, "%s", first ? "" : " ");
-  fprintf(f, "%s: %.2f;", attr, value);
+inline void write_style_dbl(std::ofstream& f, const char* attr, double value, bool first = false) {
+  f << boost::format("%s") % (first ? "" : " ");
+  f << boost::format("%s: %.2f;") % attr % value;
 }
 
-inline void write_style_fontsize(FILE* f, double value, bool first = false) {
-  fprintf(f, "%s", first ? "" : " ");
-  fprintf(f, "font-size: %.2fpt;", value);
+inline void write_style_fontsize(std::ofstream& f, double value, bool first = false) {
+  f << boost::format("%s") % (first ? "" : " ");
+  f << boost::format("font-size: %.2fpt;") % value;
 }
 
 // Writing style attributes whose values are strings
-inline void write_style_str(FILE* f, const char* attr, const char* value, bool first = false) {
-  fprintf(f, "%s", first ? "" : " ");
-  fprintf(f, "%s: %s;", attr, value);
+inline void write_style_str(std::ofstream& f, const char* attr, const char* value, bool first = false) {
+  f << boost::format("%s") % (first ? "" : " ");
+  f << boost::format("%s: %s;") % attr % value;
 }
 
 // Writing style attributes related to line types
-inline void write_style_linetype(FILE* f, const pGEcontext gc, bool first = false) {
+inline void write_style_linetype(std::ofstream& f, const pGEcontext gc, bool first = false) {
   int lty = gc->lty;
 
   // 1 lwd = 1/96", but units in rest of document are 1/72"
@@ -161,17 +170,17 @@ inline void write_style_linetype(FILE* f, const pGEcontext gc, bool first = fals
     break;
   default:
     // See comment in GraphicsEngine.h for how this works
-    fputs(" stroke-dasharray: ", f);
-    // First number
-    fprintf(f, "%i", (int) gc->lwd * (lty & 15));
+    f << " stroke-dasharray: ";
+  // First number
+  f << boost::format("%i") % ((int) gc->lwd * (lty & 15));
+  lty = lty >> 4;
+  // Remaining numbers
+  for(int i = 1 ; i < 8 && lty & 15; i++) {
+    f << boost::format("%i") % ((int) gc->lwd * (lty & 15));
     lty = lty >> 4;
-    // Remaining numbers
-    for(int i = 1 ; i < 8 && lty & 15; i++) {
-      fprintf(f, ",%i", (int) gc->lwd * (lty & 15));
-      lty = lty >> 4;
-    }
-    fputs(";", f);
-    break;
+  }
+  f << ";";
+  break;
   }
 
   // Set line end shape
@@ -223,7 +232,7 @@ void svg_metric_info(int c, const pGEcontext gc, double* ascent,
   }
 
   gdtools::context_set_font(svgd->cc, fontname(gc->fontfamily, gc->fontface),
-    gc->cex * gc->ps, is_bold(gc->fontface), is_italic(gc->fontface));
+                            gc->cex * gc->ps, is_bold(gc->fontface), is_italic(gc->fontface));
   FontMetric fm = gdtools::context_extents(svgd->cc, std::string(str));
 
   *ascent = fm.ascent;
@@ -248,31 +257,31 @@ void svg_new_page(const pGEcontext gc, pDevDesc dd) {
   }
 
   if (svgd->standalone)
-    fputs("<?xml version='1.0' encoding='UTF-8' ?>\n", svgd->file);
+    svgd->file << "<?xml version='1.0' encoding='UTF-8' ?>\n";
 
-  fputs("<svg", svgd->file);
+  svgd->file << "<svg";
   if (svgd->standalone){
-    fputs(" xmlns='http://www.w3.org/2000/svg'", svgd->file);
+    svgd->file << " xmlns='http://www.w3.org/2000/svg'";
     //http://www.w3.org/wiki/SVG_Links
-    fputs(" xmlns:xlink='http://www.w3.org/1999/xlink'", svgd->file);
+    svgd->file << " xmlns:xlink='http://www.w3.org/1999/xlink'";
   }
 
-  fprintf(svgd->file, " viewBox='0 0 %.2f %.2f'>\n", dd->right, dd->bottom);
+  svgd->file << boost::format(" viewBox='0 0 %.2f %.2f'>\n") % dd->right % dd->bottom;
 
   // Setting default styles
-  fputs("<defs>\n", svgd->file);
-  fputs("  <style type='text/css'><![CDATA[\n", svgd->file);
-  fputs("    line, polyline, path, rect, circle {\n", svgd->file);
-  fputs("      fill: none;\n", svgd->file);
-  fputs("      stroke: #000000;\n", svgd->file);
-  fputs("      stroke-linecap: round;\n", svgd->file);
-  fputs("      stroke-linejoin: round;\n", svgd->file);
-  fputs("      stroke-miterlimit: 10.00;\n", svgd->file);
-  fputs("    }\n", svgd->file);
-  fputs("  ]]></style>\n", svgd->file);
-  fputs("</defs>\n", svgd->file);
+  svgd->file << "<defs>\n";
+  svgd->file << "  <style type='text/css'><![CDATA[\n";
+  svgd->file << "    line, polyline, path, rect, circle {\n";
+  svgd->file << "      fill: none;\n";
+  svgd->file << "      stroke: #000000;\n";
+  svgd->file << "      stroke-linecap: round;\n";
+  svgd->file << "      stroke-linejoin: round;\n";
+  svgd->file << "      stroke-miterlimit: 10.00;\n";
+  svgd->file << "    }\n";
+  svgd->file << "  ]]></style>\n";
+  svgd->file << "</defs>\n";
 
-  fputs("<rect width='100%' height='100%'", svgd->file);
+  svgd->file << "<rect width='100%' height='100%'";
   write_style_begin(svgd->file);
   write_style_str(svgd->file, "stroke", "none", true);
   if (is_filled(gc->fill))
@@ -280,7 +289,7 @@ void svg_new_page(const pGEcontext gc, pDevDesc dd) {
   else
     write_style_col(svgd->file, "fill", dd->startfill);
   write_style_end(svgd->file);
-  fputs("/>\n", svgd->file);
+  svgd->file << "/>\n";
 
   svgd->pageno++;
 }
@@ -289,35 +298,35 @@ void svg_close(pDevDesc dd) {
   SVGDesc *svgd = (SVGDesc*) dd->deviceSpecific;
 
   if (svgd->pageno > 0)
-    fputs("</svg>\n", svgd->file);
+    svgd->file << "</svg>\n";
 
   delete(svgd);
 }
 
 void svg_line(double x1, double y1, double x2, double y2,
-                     const pGEcontext gc, pDevDesc dd) {
+              const pGEcontext gc, pDevDesc dd) {
   SVGDesc *svgd = (SVGDesc*) dd->deviceSpecific;
 
-  fprintf(svgd->file, "<line x1='%.2f' y1='%.2f' x2='%.2f' y2='%.2f'",
-    x1, y1, x2, y2);
+  svgd->file << boost::format("<line x1='%.2f' y1='%.2f' x2='%.2f' y2='%.2f'") %
+          x1 % y1 % x2 % y2;
 
   write_style_begin(svgd->file);
   write_style_linetype(svgd->file, gc, true);
   write_style_end(svgd->file);
 
-  fputs(" />\n", svgd->file);
+  svgd->file << " />\n";
 }
 
 void svg_poly(int n, double *x, double *y, int filled, const pGEcontext gc,
               pDevDesc dd) {
 
   SVGDesc *svgd = (SVGDesc*) dd->deviceSpecific;
-  fputs("<polyline points='", svgd->file);
+  svgd->file << "<polyline points='";
 
   for (int i = 0; i < n; i++) {
-    fprintf(svgd->file, "%.2f,%.2f ", x[i], y[i]);
+    svgd->file << boost::format("%.2f,%.2f ") % x[i] % y[i];
   }
-  fputs("'", svgd->file);
+  svgd->file << "'";
 
   write_style_begin(svgd->file);
   write_style_linetype(svgd->file, gc, true);
@@ -325,7 +334,7 @@ void svg_poly(int n, double *x, double *y, int filled, const pGEcontext gc,
     write_style_col(svgd->file, "fill", gc->fill);
   write_style_end(svgd->file);
 
-  fputs(" />\n", svgd->file);
+  svgd->file << " />\n";
 }
 
 void svg_polyline(int n, double *x, double *y, const pGEcontext gc,
@@ -343,22 +352,22 @@ void svg_path(double *x, double *y,
               const pGEcontext gc, pDevDesc dd) {
   SVGDesc *svgd = (SVGDesc*) dd->deviceSpecific;
   // Create path data
-  fputs("<path d='", svgd->file);
+  svgd->file << "<path d='";
   int ind = 0;
   for (int i = 0; i < npoly; i++) {
     // Move to the first point of the sub-path
-    fprintf(svgd->file, "M %.2f %.2f ", x[ind], y[ind]);
+    svgd->file << boost::format("M %.2f %.2f ") % x[ind] % y[ind];
     ind++;
     // Draw the sub-path
     for (int j = 1; j < nper[i]; j++) {
-      fprintf(svgd->file, "L %.2f %.2f ", x[ind], y[ind]);
+      svgd->file << boost::format("L %.2f %.2f ") % x[ind] % y[ind];
       ind++;
     }
     // Close the sub-path
-    fputs("Z ", svgd->file);
+    svgd->file << "Z ";
   }
   // Finish path data
-  fputs("'", svgd->file);
+  svgd->file << "'";
 
   write_style_begin(svgd->file);
   // Specify fill rule
@@ -368,14 +377,14 @@ void svg_path(double *x, double *y,
   write_style_linetype(svgd->file, gc);
   write_style_end(svgd->file);
 
-  fputs(" />\n", svgd->file);
+  svgd->file << " />\n";
 }
 
 double svg_strwidth(const char *str, const pGEcontext gc, pDevDesc dd) {
   SVGDesc *svgd = (SVGDesc*) dd->deviceSpecific;
 
   gdtools::context_set_font(svgd->cc, fontname(gc->fontfamily, gc->fontface),
-    gc->cex * gc->ps, is_bold(gc->fontface), is_italic(gc->fontface));
+                            gc->cex * gc->ps, is_bold(gc->fontface), is_italic(gc->fontface));
   FontMetric fm = gdtools::context_extents(svgd->cc, std::string(str));
 
   return fm.width;
@@ -386,9 +395,9 @@ void svg_rect(double x0, double y0, double x1, double y1,
   SVGDesc *svgd = (SVGDesc*) dd->deviceSpecific;
 
   // x and y give top-left position
-  fprintf(svgd->file,
-      "<rect x='%.2f' y='%.2f' width='%.2f' height='%.2f'",
-      fmin(x0, x1), fmin(y0, y1), fabs(x1 - x0), fabs(y1 - y0));
+  svgd->file <<
+    boost::format("<rect x='%.2f' y='%.2f' width='%.2f' height='%.2f'") %
+          fmin(x0, x1) % fmin(y0, y1) % fabs(x1 - x0) % fabs(y1 - y0);
 
   write_style_begin(svgd->file);
   write_style_linetype(svgd->file, gc, true);
@@ -396,14 +405,14 @@ void svg_rect(double x0, double y0, double x1, double y1,
     write_style_col(svgd->file, "fill", gc->fill);
   write_style_end(svgd->file);
 
-  fputs(" />\n", svgd->file);
+  svgd->file << " />\n";
 }
 
 void svg_circle(double x, double y, double r, const pGEcontext gc,
-                       pDevDesc dd) {
+                pDevDesc dd) {
   SVGDesc *svgd = (SVGDesc*) dd->deviceSpecific;
 
-  fprintf(svgd->file, "<circle cx='%.2f' cy='%.2f' r='%.2fpt'", x, y, r);
+  svgd->file << boost::format("<circle cx='%.2f' cy='%.2f' r='%.2fpt'") % x % y % r;
 
   write_style_begin(svgd->file);
   write_style_linetype(svgd->file, gc, true);
@@ -411,7 +420,7 @@ void svg_circle(double x, double y, double r, const pGEcontext gc,
     write_style_col(svgd->file, "fill", gc->fill);
   write_style_end(svgd->file);
 
-  fputs(" />\n", svgd->file);
+  svgd->file << " />\n";
 }
 
 void svg_text(double x, double y, const char *str, double rot,
@@ -419,13 +428,14 @@ void svg_text(double x, double y, const char *str, double rot,
   SVGDesc *svgd = (SVGDesc*) dd->deviceSpecific;
 
 
-  fputs("<text", svgd->file);
+  svgd->file << "<text";
   if (rot == 0) {
     write_attr_dbl(svgd->file, "x", x);
     write_attr_dbl(svgd->file, "y", y);
   } else {
-    fprintf(svgd->file, " transform='translate(%.2f,%.2f) rotate(%0.0f)'", x, y,
-      -1.0 * rot);
+    svgd->file <<
+      boost::format(" transform='translate(%.2f,%.2f) rotate(%0.0f)'") %
+        x % y % (-1.0 * rot);
   }
 
   write_style_begin(svgd->file);
@@ -441,11 +451,11 @@ void svg_text(double x, double y, const char *str, double rot,
   write_style_str(svgd->file, "font-family", font.c_str());
   write_style_end(svgd->file);
 
-  fputs(">", svgd->file);
+  svgd->file << ">";
 
   write_escaped(svgd->file, str);
 
-  fputs("</text>\n", svgd->file);
+  svgd->file << "</text>\n";
 }
 
 void svg_size(double *left, double *right, double *bottom, double *top,
@@ -473,20 +483,22 @@ void svg_raster(unsigned int *raster, int w, int h,
   }
 
   std::string base64_str = gdtools::raster_to_str(raster_, w, h, width, height,
-    (Rboolean) interpolate);
+                                                  (Rboolean) interpolate);
 
-  fputs("<image", svgd->file);
+  svgd->file << "<image";
   write_attr_dbl(svgd->file, "width", width);
   write_attr_dbl(svgd->file, "height", height);
   write_attr_dbl(svgd->file, "x", x);
   write_attr_dbl(svgd->file, "y", y - height);
 
   if( rot != 0 ){
-    fprintf(svgd->file, " transform='rotate(%0.0f,%.2f,%.2f)'", -1.0 * rot, x, y);
+    svgd->file << boost::format(" transform='rotate(%0.0f,%.2f,%.2f)'") %
+      (-1.0 * rot) % x % y;
   }
 
-  fprintf(svgd->file, " xlink:href='data:image/png;base64,%s'", base64_str.c_str());
-  fputs( "/>", svgd->file);
+  svgd->file << boost::format(" xlink:href='data:image/png;base64,%s'") %
+    base64_str.c_str();
+  svgd->file << "/>";
 }
 
 
@@ -559,6 +571,7 @@ pDevDesc svg_driver_new(std::string filename, int bg, double width,
   dd->deviceSpecific = new SVGDesc(filename, standalone);
   return dd;
 }
+
 
 // [[Rcpp::export]]
 bool devSVG_(std::string file, std::string bg_, int width, int height,

@@ -22,6 +22,7 @@ Imports:
     gdtools
 LinkingTo:
     Rcpp,
+    BH,
     gdtools
 Suggests:
     htmltools,
