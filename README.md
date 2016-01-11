@@ -1,4 +1,37 @@
-# svglite
+
+
+# svglite - FORK
+
+---
+This fork of @hadley's [**svglite**](https://github.com/hadley/svglite) includes a graphics device, `svglitedev()`,
+which displays an SVG plot in the browser or RStudio web viewer.  Importantly,
+this plot ***has a fixed size** set by `width=` and `height=` arguments, so
+you can set the size to the same size you want in your final report/product,
+and produce plots iteratively until you ultimately create them with plain 
+`svglite()` or **knitr**.
+
+## Installation:
+
+```
+devtools::install_github('noamross/svglite@svglitedev')
+```
+
+## Usage:
+
+```
+library(svglite)
+
+svglitedev(height = 3, width = 10)
+plot(1:10)
+hist(rnorm(100))
+## looks good?
+svglite(file="testplot.svg", height = 3, width = 10)
+plot(1:10)
+dev.off()
+```
+---
+
+*Below is the README of the original [**svglite**](https://github.com/hadley/svglite)*
 
 [![Travis-CI Build Status](https://travis-ci.org/hadley/svglite.svg?branch=master)](https://travis-ci.org/hadley/svglite) [![Coverage Status](https://img.shields.io/codecov/c/github/hadley/svglite/master.svg)](https://codecov.io/github/hadley/svglite?branch=master) [![CRAN\_Status\_Badge](http://www.r-pkg.org/badges/version/svglite)](http://cran.r-project.org/package=svglite)
 

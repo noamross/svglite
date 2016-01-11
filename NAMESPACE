@@ -3,6 +3,7 @@
 export(editSVG)
 export(htmlSVG)
 export(svglite)
+export(svglitedev)
 export(xmlSVG)
 importFrom(Rcpp,sourceCpp)
 importFrom(gdtools,raster_view)
