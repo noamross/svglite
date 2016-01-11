@@ -27,7 +27,7 @@ hist(rnorm(100))
 ## looks good?
 svglite(file="testplot.svg", height = 3, width = 10)
 plot(1:10)
-dev.off()
+dev.off() # To go back to standard graphics device.
 ```
 ---
 

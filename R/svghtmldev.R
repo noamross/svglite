@@ -2,7 +2,8 @@
 #'
 #' Set \code{svglitedev()} as your graphics device at the start of a session
 #' and your plotting commands will appear in the R Studio viewer or browser
-#' window.  Then use svglite(), knitr, or another tool to produce the final file.
+#' window.  Then use svglite(), knitr, or another tool to produce the final file. Use dev.off()
+#' to return to your normally scheduled graphics device.
 #'
 #'
 #' @param file the file where output will appear.
