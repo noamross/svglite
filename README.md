@@ -5,7 +5,7 @@
 ---
 This fork of @hadley's [**svglite**](https://github.com/hadley/svglite) includes a graphics device, `svglitedev()`,
 which displays an SVG plot in the browser or RStudio web viewer.  Importantly,
-this plot ***has a fixed size** set by `width=` and `height=` arguments, so
+this plot ***has a fixed size*** set by `width=` and `height=` arguments, so
 you can set the size to the same size you want in your final report/product,
 and produce plots iteratively until you ultimately create them with plain 
 `svglite()` or **knitr**.
